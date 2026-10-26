@@ -63,7 +63,7 @@ public class CartManager : MonoBehaviour
     {
         ProductCatalog catalog = FindFirstObjectByType<ProductCatalog>();
 
-        if(catalog == null || catalog.product)
+        if(catalog == null || catalog.products == null || catalog.products.Count == 0)
         {
             Debug.LogWarning("商品カタログに商品がありません。");
             return;
