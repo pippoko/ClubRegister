@@ -102,6 +102,11 @@ public class ProductCatalog : MonoBehaviour
         int price,
         int stock,
         string imagePath,
+        int setDiscountQuantity,
+        int setDiscountPrice,
+        string setDiscountGroup,
+        int bonusThresholdAmount,
+        int bonusQuantity,
         out string errorMessage)
     {
         errorMessage = null;
@@ -130,12 +135,22 @@ public class ProductCatalog : MonoBehaviour
         int oldActivePrice = product.ActivePrice;
         int oldStock = product.initialStock;
         string oldImagePath = product.imagePath;
+        int oldSetDiscountQuantity = product.setDiscountQuantity;
+        int oldSetDiscountPrice = product.setDiscountPrice;
+        string oldSetDiscountGroup = product.setDiscountGroup;
+        int oldBonusThresholdAmount = product.bonusThresholdAmount;
+        int oldBonusQuantity = product.bonusQuantity;
 
         product.productName = productName.Trim();
         product.DefaultPrice = price;
         product.ActivePrice = price;
         product.initialStock = stock;
         product.imagePath = imagePath?.Trim() ?? string.Empty;
+        product.setDiscountQuantity = Mathf.Max(0, setDiscountQuantity);
+        product.setDiscountPrice = Mathf.Max(0, setDiscountPrice);
+        product.setDiscountGroup = setDiscountGroup?.Trim() ?? string.Empty;
+        product.bonusThresholdAmount = Mathf.Max(0, bonusThresholdAmount);
+        product.bonusQuantity = Mathf.Max(0, bonusQuantity);
 
         try
         {
@@ -149,6 +164,11 @@ public class ProductCatalog : MonoBehaviour
             product.ActivePrice = oldActivePrice;
             product.initialStock = oldStock;
             product.imagePath = oldImagePath;
+            product.setDiscountQuantity = oldSetDiscountQuantity;
+            product.setDiscountPrice = oldSetDiscountPrice;
+            product.setDiscountGroup = oldSetDiscountGroup;
+            product.bonusThresholdAmount = oldBonusThresholdAmount;
+            product.bonusQuantity = oldBonusQuantity;
             errorMessage = $"商品を保存できませんでした：{exception.Message}";
             return false;
         }

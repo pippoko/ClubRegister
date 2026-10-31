@@ -22,6 +22,13 @@ public class ProductData
     // 商品画像の参照先
     public string imagePath;
 
+    // イベント開始時に記録する販売特典
+    public int setDiscountQuantity;
+    public int setDiscountPrice;
+    public string setDiscountGroup;
+    public int bonusThresholdAmount;
+    public int bonusQuantity;
+
     // 頒布条件
     public DistributionType distributionType;
     public bool isR18;
