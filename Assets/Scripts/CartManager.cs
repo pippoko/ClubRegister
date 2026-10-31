@@ -9,6 +9,7 @@ public class CartItem
     public string productName;
     public int unitPrice;
     public int quantity;
+    public bool isBonus;
 }
 
 public class CartManager : MonoBehaviour
