@@ -205,11 +205,18 @@
       }
     },
     "com.yasirkula.nativegallery": {
+<<<<<<< Updated upstream
       "version": "https://github.com/yasirkula/UnityNativeGallery.git#v1.9.5",
       "depth": 0,
       "source": "git",
       "dependencies": {},
       "hash": "6fdfae30629814b22b971453d87665d10e1c2ed4"
+=======
+      "version": "file:C:/Users/redri/Downloads/UnityNativeGallery-master/UnityNativeGallery-master",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+>>>>>>> Stashed changes
     },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
