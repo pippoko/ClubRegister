@@ -23,7 +23,8 @@ public class OfflineRegisterApp : MonoBehaviour
         RegisteredEvents,
         RegisteredEventForm,
         History,
-        EndEvent
+        EndEvent,
+        ChangeFund
     }
 
     private static OfflineRegisterApp instance;
@@ -40,6 +41,8 @@ public class OfflineRegisterApp : MonoBehaviour
 
     private ProductCatalog catalog;
     private OfflineRegisterStore store;
+    private OfflineRegisterLayout layoutSettings;
+    private RegisterSoundEffects soundEffects;
     private Canvas canvas;
     private RectTransform safeRoot;
     private RectTransform header;
@@ -51,6 +54,7 @@ public class OfflineRegisterApp : MonoBehaviour
     private readonly List<CartItem> cart = new List<CartItem>();
     private readonly HashSet<string> selectedEventProductIDs = new HashSet<string>();
     private readonly Dictionary<string, Sprite> productImageCache = new Dictionary<string, Sprite>();
+    private List<RegisterChangeCash> changeCashDraft = new List<RegisterChangeCash>();
     private string editingProductID;
     private string editingRegisteredEventID;
     private InputField eventNameInput;
@@ -98,6 +102,8 @@ public class OfflineRegisterApp : MonoBehaviour
         Screen.sleepTimeout = SleepTimeout.SystemSetting;
 
         catalog = FindFirstObjectByType<ProductCatalog>();
+        layoutSettings = FindFirstObjectByType<OfflineRegisterLayout>();
+        soundEffects = FindFirstObjectByType<RegisterSoundEffects>();
         if(catalog == null)
         {
             var catalogObject = new GameObject("Product Catalog");
@@ -161,9 +167,11 @@ public class OfflineRegisterApp : MonoBehaviour
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(430, 932);
+        scaler.referenceResolution = layoutSettings != null
+            ? layoutSettings.referenceResolution
+            : new Vector2(430, 932);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.45f;
+        scaler.matchWidthOrHeight = layoutSettings != null ? layoutSettings.matchWidthOrHeight : 0.45f;
 
         uiFont = CreateJapaneseFont();
         safeRoot = CreateRect("Safe Area", canvasObject.transform);
@@ -174,18 +182,21 @@ public class OfflineRegisterApp : MonoBehaviour
         safeRoot.gameObject.AddComponent<Image>().color = Paper;
 
         VerticalLayoutGroup rootLayout = safeRoot.gameObject.AddComponent<VerticalLayoutGroup>();
-        rootLayout.padding = new RectOffset(12, 12, 10, 10);
-        rootLayout.spacing = 8;
+        int horizontalPadding = layoutSettings != null ? layoutSettings.horizontalPadding : 12;
+        int verticalPadding = layoutSettings != null ? layoutSettings.verticalPadding : 10;
+        int sectionSpacing = layoutSettings != null ? layoutSettings.sectionSpacing : 8;
+        rootLayout.padding = new RectOffset(horizontalPadding, horizontalPadding, verticalPadding, verticalPadding);
+        rootLayout.spacing = sectionSpacing;
         rootLayout.childControlWidth = true;
         rootLayout.childControlHeight = true;
         rootLayout.childForceExpandWidth = true;
         rootLayout.childForceExpandHeight = false;
 
-        header = CreatePanel("Header", safeRoot, PrimaryLight, 66);
+        header = CreatePanel("Header", safeRoot, PrimaryLight, layoutSettings != null ? layoutSettings.headerHeight : 66);
         body = CreatePanel("Page", safeRoot, Paper, -1);
-        footer = CreatePanel("Actions", safeRoot, Paper, 144);
+        footer = CreatePanel("Actions", safeRoot, Paper, layoutSettings != null ? layoutSettings.footerHeight : 144);
         body.GetComponent<LayoutElement>().flexibleHeight = 1;
-        body.GetComponent<LayoutElement>().minHeight = 250;
+        body.GetComponent<LayoutElement>().minHeight = layoutSettings != null ? layoutSettings.pageMinimumHeight : 250;
     }
 
     private Font CreateJapaneseFont()
@@ -254,6 +265,10 @@ public class OfflineRegisterApp : MonoBehaviour
                 BuildEndEvent();
                 BuildEndEventFooter();
                 break;
+            case Page.ChangeFund:
+                BuildChangeFund();
+                BuildChangeFundFooter();
+                break;
         }
     }
 
@@ -271,11 +286,13 @@ public class OfflineRegisterApp : MonoBehaviour
         row.childForceExpandWidth = false;
         row.childForceExpandHeight = true;
 
-        string title = store.ActiveEvent == null ? "Club Register" : store.ActiveEvent.eventName;
+        string title = store.ActiveEvent == null ? "Club Register" : store.ActiveEvent.isPractice
+            ? "おためしレジ"
+            : store.ActiveEvent.eventName;
         Text titleText = CreateText(header, title, 22, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
         titleText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1;
 
-        string state = store.ActiveEvent == null ? "オフライン" : "● オフライン";
+        string state = store.ActiveEvent == null ? "オフライン" : store.ActiveEvent.isPractice ? "練習中" : "● オフライン";
         Text stateText = CreateText(header, state, 14, Primary, TextAnchor.MiddleRight, FontStyle.Bold);
         stateText.gameObject.AddComponent<LayoutElement>().preferredWidth = 94;
     }
@@ -283,13 +300,17 @@ public class OfflineRegisterApp : MonoBehaviour
     private void BuildHome()
     {
         ConfigureVerticalPage(18);
-        CreateLabel(body, store.ActiveEvent == null ? "ホーム" : "イベント会計中", 28, Ink, FontStyle.Bold, 46);
+        CreateLabel(body, store.ActiveEvent == null
+            ? "ホーム"
+            : store.ActiveEvent.isPractice ? "おためしレジ中" : "イベント会計中", 28, Ink, FontStyle.Bold, 46);
         CreateLabel(body, "商品・イベントの準備、売上履歴の確認ができます。会計はオフラインで利用できます。", 16, Muted, FontStyle.Normal, 68);
 
         if(store.ActiveEvent != null)
         {
             CreateLabel(body, $"開催中：{store.ActiveEvent.eventName}", 22, Primary, FontStyle.Bold, 54);
-            CreateLabel(body, store.IsFinalizing
+            CreateLabel(body, store.ActiveEvent.isPractice
+                ? "おためし終了時に、売上・在庫・釣銭の変動を破棄します。"
+                : store.IsFinalizing
                 ? "イベント終了処理を再開できます。"
                 : "イベント中の在庫は仮の数として記録され、終了時に確定します。", 16, Muted, FontStyle.Normal, 54);
         }
@@ -322,14 +343,168 @@ public class OfflineRegisterApp : MonoBehaviour
         }
         else
         {
-            Button start = CreateButton(footer, "登録イベントから会計を開始", Primary, Color.white, 58, () => ShowPage(Page.RegisteredEvents));
+            RectTransform primaryActions = CreateRow(footer, 8);
+            Button start = CreateButton(primaryActions, "イベント開始", Primary, Color.white, 58, () => ShowPage(Page.RegisteredEvents));
             start.interactable = string.IsNullOrEmpty(store.LoadError);
+            Button practice = CreateButton(primaryActions, "おためしレジ", AccentLight, Accent, 58, ConfirmStartPractice);
+            practice.interactable = string.IsNullOrEmpty(store.LoadError);
         }
 
         RectTransform row = CreateRow(footer, 8);
-        CreateButton(row, "イベント登録", Card, Ink, 48, () => ShowPage(Page.RegisteredEvents));
-        CreateButton(row, "商品管理", Card, Ink, 48, () => ShowPage(Page.Products));
-        CreateButton(row, "売上履歴", Card, Ink, 48, () => ShowPage(Page.History));
+        CreateButton(row, "イベント", Card, Ink, 48, () => ShowPage(Page.RegisteredEvents));
+        CreateButton(row, "商品", Card, Ink, 48, () => ShowPage(Page.Products));
+        CreateButton(row, "履歴", Card, Ink, 48, () => ShowPage(Page.History));
+        CreateButton(row, "💴釣銭", Card, Ink, 48, OpenChangeFund);
+    }
+
+    private void OpenChangeFund()
+    {
+        changeCashDraft = CopyChangeCashList(store.ConfiguredChangeCash);
+        ShowPage(Page.ChangeFund);
+    }
+
+    private void BuildChangeFund()
+    {
+        ConfigureVerticalPage(6);
+        RegisterEventRecord active = store.ActiveEvent;
+        bool readOnly = active != null;
+        CreateLabel(body, "お釣り管理", 25, Ink, FontStyle.Bold, 42);
+
+        if(readOnly)
+        {
+            long used = store.GetEventChangeTotal(active);
+            long remaining = store.GetRemainingChangeAmount(active);
+            if(active.hasChangeFloatSnapshot)
+            {
+                long starting = store.GetStartingChangeAmount(active);
+                CreateLabel(body, $"準備 {starting:N0}円　＝　残り {remaining:N0}円 ＋ 使用 {used:N0}円", 15, Primary, FontStyle.Bold, 38);
+            }
+            else
+            {
+                CreateLabel(body, $"現在の残り {remaining:N0}円　・　イベント中に使用 {used:N0}円", 15, Primary, FontStyle.Bold, 38);
+            }
+            CreateLabel(body, "会計中は枚数を固定します。次のイベント分はホームで設定できます。", 13, Muted, FontStyle.Normal, 38);
+        }
+        else
+        {
+            CreateLabel(body, $"準備する釣銭：{GetChangeCashDraftTotal():N0}円　（各行の − / ＋ で枚数を設定）", 15, Muted, FontStyle.Normal, 40);
+        }
+
+        RectTransform list = CreateVerticalScroll(body, 1);
+        IReadOnlyList<RegisterChangeCash> values = readOnly ? store.GetChangeCashCounts(active) : changeCashDraft;
+        foreach(RegisterChangeCash item in values)
+        {
+            if(item == null)
+            {
+                continue;
+            }
+
+            RectTransform row = CreateRow(list, 6, Card);
+            Text denomination = CreateText(row, GetChangeDenominationLabel(item.denomination), 16, Ink, TextAnchor.MiddleLeft, FontStyle.Bold);
+            denomination.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1;
+            if(readOnly)
+            {
+                Text count = CreateText(row, $"{item.count}枚", 17, Primary, TextAnchor.MiddleCenter, FontStyle.Bold);
+                count.gameObject.AddComponent<LayoutElement>().preferredWidth = 72;
+            }
+            else
+            {
+                Button minus = CreateButton(row, "−", Card, Ink, 48, () => ChangeDraftCount(item.denomination, -1));
+                minus.gameObject.GetComponent<LayoutElement>().preferredWidth = 52;
+                Text count = CreateText(row, item.count.ToString(), 18, Ink, TextAnchor.MiddleCenter, FontStyle.Bold);
+                count.gameObject.AddComponent<LayoutElement>().preferredWidth = 48;
+                Button plus = CreateButton(row, "+", PrimaryLight, Primary, 48, () => ChangeDraftCount(item.denomination, 1));
+                plus.gameObject.GetComponent<LayoutElement>().preferredWidth = 52;
+            }
+        }
+    }
+
+    private void BuildChangeFundFooter()
+    {
+        ConfigureVertical(footer, 8, 8);
+        if(store.ActiveEvent != null)
+        {
+            CreateButton(footer, "会計へ戻る", Card, Ink, 54,
+                () => ShowPage(store.IsFinalizing ? Page.EndEvent : Page.Register));
+            return;
+        }
+
+        CreateButton(footer, "準備数を保存", Primary, Color.white, 54, SaveChangeFund);
+        CreateButton(footer, "戻る", Card, Ink, 48, () => ShowPage(Page.Home));
+    }
+
+    private void ChangeDraftCount(int denomination, int delta)
+    {
+        RegisterChangeCash item = changeCashDraft.Find(candidate => candidate != null && candidate.denomination == denomination);
+        if(item == null)
+        {
+            return;
+        }
+
+        item.count = Mathf.Clamp(item.count + delta, 0, 999);
+        ShowPage(Page.ChangeFund);
+    }
+
+    private void SaveChangeFund()
+    {
+        if(!store.SetConfiguredChangeCash(changeCashDraft, out string error))
+        {
+            ShowNotice(error);
+            return;
+        }
+
+        ShowPage(Page.Home);
+    }
+
+    private long GetChangeCashDraftTotal()
+    {
+        long total = 0;
+        if(changeCashDraft != null)
+        {
+            foreach(RegisterChangeCash item in changeCashDraft)
+            {
+                if(item != null && item.count > 0)
+                {
+                    total += (long)item.denomination * item.count;
+                }
+            }
+        }
+
+        return total;
+    }
+
+    private static List<RegisterChangeCash> CopyChangeCashList(IReadOnlyList<RegisterChangeCash> source)
+    {
+        var result = new List<RegisterChangeCash>();
+        if(source != null)
+        {
+            foreach(RegisterChangeCash item in source)
+            {
+                if(item != null)
+                {
+                    result.Add(new RegisterChangeCash { denomination = item.denomination, count = item.count });
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static string GetChangeDenominationLabel(int denomination)
+    {
+        switch(denomination)
+        {
+            case 10000: return "10,000円札";
+            case 5000: return "5,000円札";
+            case 1000: return "1,000円札";
+            case 500: return "500円玉";
+            case 100: return "100円玉";
+            case 50: return "50円玉";
+            case 10: return "10円玉";
+            case 5: return "5円玉";
+            case 1: return "1円玉";
+            default: return $"{denomination:N0}円";
+        }
     }
 
     private void BuildRegister()
@@ -346,15 +521,25 @@ public class OfflineRegisterApp : MonoBehaviour
         long sales = store.GetEventSalesTotal(active);
         CreateLabel(body, $"{DateTime.Now:M/d}　{active.eventName}", 17, Ink, FontStyle.Bold, 32);
         CreateLabel(body, $"本日の売上　{sales:N0}円　／　在庫はイベント終了時に確定", 14, Primary, FontStyle.Bold, 32);
+        CreateLabel(body, $"釣銭残り　{store.GetRemainingChangeAmount(active):N0}円", 13, Muted, FontStyle.Normal, 26);
+        if(active.isPractice)
+        {
+            CreateLabel(body, "おためし中：この会計は終了時に破棄されます。", 14, Accent, FontStyle.Bold, 30);
+        }
 
         RectTransform scroll = CreateScroll(body, "商品一覧", 1);
         RectTransform content = scroll.Find("Content") as RectTransform;
         GridLayoutGroup grid = content.gameObject.AddComponent<GridLayoutGroup>();
         float logicalWidth = Screen.safeArea.width / Mathf.Max(0.5f, canvas.scaleFactor);
-        int columns = logicalWidth >= 720 ? 4 : 3;
-        float spacing = 8;
-        float cellWidth = Mathf.Max(92, (logicalWidth - 42 - spacing * (columns - 1)) / columns);
-        grid.cellSize = new Vector2(cellWidth, cellWidth * 1.28f);
+        int compactColumns = layoutSettings != null ? layoutSettings.compactColumnCount : 3;
+        int wideColumns = layoutSettings != null ? layoutSettings.wideColumnCount : 4;
+        float wideBreakpoint = layoutSettings != null ? layoutSettings.wideLayoutBreakpoint : 720f;
+        int columns = logicalWidth >= wideBreakpoint ? wideColumns : compactColumns;
+        float spacing = layoutSettings != null ? layoutSettings.productTileSpacing : 8f;
+        float horizontalInset = layoutSettings != null ? layoutSettings.horizontalPadding : 12f;
+        float cellWidth = Mathf.Max(92, (logicalWidth - horizontalInset * 2 - spacing * (columns - 1)) / columns);
+        float tileHeightRatio = layoutSettings != null ? layoutSettings.productTileHeightRatio : 1.28f;
+        grid.cellSize = new Vector2(cellWidth, cellWidth * tileHeightRatio);
         grid.spacing = new Vector2(spacing, spacing);
         grid.padding = new RectOffset(2, 2, 3, 10);
         grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
@@ -364,15 +549,24 @@ public class OfflineRegisterApp : MonoBehaviour
         ContentSizeFitter fitter = content.gameObject.AddComponent<ContentSizeFitter>();
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        if(catalog.products == null || catalog.products.Count == 0)
+        if(catalog.products == null || catalog.products.Count == 0 || active.products == null || active.products.Count == 0)
         {
-            CreateLabel(content, "商品がありません。商品管理から登録してください。", 18, Muted, FontStyle.Normal, 80);
+            CreateLabel(content, "このイベントで販売する商品がありません。", 18, Muted, FontStyle.Normal, 80);
             return;
+        }
+
+        var eventProductIDs = new HashSet<string>();
+        foreach(RegisterProductSnapshot snapshot in active.products)
+        {
+            if(snapshot != null && !string.IsNullOrEmpty(snapshot.productID))
+            {
+                eventProductIDs.Add(snapshot.productID);
+            }
         }
 
         foreach(ProductData product in catalog.products)
         {
-            if(product != null)
+            if(product != null && eventProductIDs.Contains(product.productID))
             {
                 CreateProductTile(content, product);
             }
@@ -382,7 +576,7 @@ public class OfflineRegisterApp : MonoBehaviour
     private void CreateProductTile(Transform parent, ProductData product)
     {
         int remaining = store.GetRemainingStock(product.productID);
-        Button button = CreateButton(parent, string.Empty, Card, Ink, 0, () => AddToCart(product));
+        Button button = CreateButton(parent, string.Empty, Card, Ink, 0, () => AddToCart(product), true);
         button.interactable = remaining > 0;
         Image tileBackground = button.GetComponent<Image>();
         tileBackground.color = remaining > 0 ? Card : new Color(0.88f, 0.88f, 0.87f);
@@ -451,9 +645,19 @@ public class OfflineRegisterApp : MonoBehaviour
             () => ShowPage(Page.Cart)).gameObject.GetComponent<LayoutElement>().flexibleWidth = 1.2f;
 
         RectTransform navigation = CreateRow(footer, 6);
-        CreateButton(navigation, "商品管理", Card, Ink, 46, () => ShowPage(Page.Products));
-        CreateButton(navigation, "売上履歴", Card, Ink, 46, () => ShowPage(Page.History));
-        CreateButton(navigation, "イベント終了", AccentLight, Ink, 46, () => ShowPage(Page.EndEvent));
+        if(store.ActiveEvent != null && store.ActiveEvent.isPractice)
+        {
+            CreateButton(navigation, "釣銭", Card, Ink, 46, OpenChangeFund);
+            CreateButton(navigation, "履歴", Card, Ink, 46, () => ShowPage(Page.History));
+            CreateButton(navigation, "おためしを終了", AccentLight, Accent, 46, ConfirmEndPractice);
+        }
+        else
+        {
+            CreateButton(navigation, "商品", Card, Ink, 46, () => ShowPage(Page.Products));
+            CreateButton(navigation, "履歴", Card, Ink, 46, () => ShowPage(Page.History));
+            CreateButton(navigation, "釣銭", Card, Ink, 46, OpenChangeFund);
+            CreateButton(navigation, "終了", AccentLight, Ink, 46, () => ShowPage(Page.EndEvent));
+        }
     }
 
     private void BuildCart()
@@ -703,9 +907,14 @@ public class OfflineRegisterApp : MonoBehaviour
             CreateLabel(card, $"販売商品 {definition.productIDs.Count}点：{GetRegisteredProductNames(definition)}", 14, Muted, FontStyle.Normal,
                 Mathf.Max(38, definition.productIDs.Count * 22));
             RectTransform actions = CreateRow(card, 8);
-            CreateButton(actions, "開始", Primary, Color.white, 48, () => ConfirmStartEvent(definition));
-            CreateButton(actions, "編集", Card, Ink, 48, () => OpenRegisteredEventForm(definition));
-            card.GetComponent<LayoutElement>().preferredHeight = 142 + definition.productIDs.Count * 22;
+            Button start = CreateButton(actions, "開始", Primary, Color.white, 48, () => ConfirmStartEvent(definition));
+            Button edit = CreateButton(actions, "編集", Card, Ink, 48, () => OpenRegisteredEventForm(definition));
+            Button delete = CreateButton(actions, "削除", AccentLight, Accent, 48, () => ConfirmDeleteRegisteredEvent(definition));
+            bool editable = store.ActiveEvent == null;
+            start.interactable = editable;
+            edit.interactable = editable;
+            delete.interactable = editable;
+            card.GetComponent<LayoutElement>().preferredHeight = 150 + definition.productIDs.Count * 22;
         }
 
         if(availableCount == 0)
@@ -897,21 +1106,80 @@ public class OfflineRegisterApp : MonoBehaviour
             });
     }
 
+    private void ConfirmStartPractice()
+    {
+        if(store.ActiveEvent != null)
+        {
+            ShowNotice("イベント会計中はおためしレジを開始できません。");
+            return;
+        }
+
+        ShowConfirmationDialog("おためしレジを開始しますか？",
+            "登録済みの商品を使って会計を体験できます。終了すると、練習中の売上・在庫・釣銭の変動は保存されません。",
+            "開始する", () =>
+            {
+                if(!store.StartPracticeEvent(catalog, out string error))
+                {
+                    ShowNotice(error);
+                    return;
+                }
+
+                cart.Clear();
+                ShowPage(Page.Register);
+            });
+    }
+
+    private void ConfirmEndPractice()
+    {
+        if(store.ActiveEvent == null || !store.ActiveEvent.isPractice)
+        {
+            return;
+        }
+
+        ShowConfirmationDialog("おためしを終了しますか？",
+            "練習中の売上と在庫・釣銭の変動を破棄し、開始前の状態に戻します。",
+            "終了する", CompleteEvent);
+    }
+
+    private void ConfirmDeleteRegisteredEvent(RegisteredEventDefinition definition)
+    {
+        if(definition == null)
+        {
+            ShowNotice("削除する登録イベントが見つかりません。");
+            return;
+        }
+
+        ShowConfirmationDialog("登録イベントを削除しますか？",
+            $"「{definition.eventName}」の登録内容を削除します。売上履歴があるイベントは削除できません。",
+            "削除する", () =>
+            {
+                if(!store.DeleteRegisteredEvent(definition.registeredEventID, out string error))
+                {
+                    ShowNotice(error);
+                    return;
+                }
+
+                ShowPage(Page.RegisteredEvents);
+            });
+    }
+
     private void BuildHistory()
     {
         ConfigureVerticalPage(8);
         CreateLabel(body, "売上履歴", 26, Ink, FontStyle.Bold, 46);
         RectTransform list = CreateVerticalScroll(body, 1);
 
-        if(store.ActiveEvent != null)
+        if(store.ActiveEvent != null && !store.ActiveEvent.isPractice)
         {
             CreateEventHistoryCard(list, store.ActiveEvent, "開催中・仮集計", false);
         }
 
         IReadOnlyList<RegisterEventRecord> completed = store.CompletedEvents;
-        if(completed.Count == 0 && store.ActiveEvent == null)
+        if(completed.Count == 0 && (store.ActiveEvent == null || store.ActiveEvent.isPractice))
         {
-            CreateLabel(list, "イベント履歴はまだありません。", 17, Muted, FontStyle.Normal, 48);
+            CreateLabel(list, store.ActiveEvent != null && store.ActiveEvent.isPractice
+                ? "おためしレジの売上は履歴に保存されません。"
+                : "イベント履歴はまだありません。", 17, Muted, FontStyle.Normal, 48);
             return;
         }
 
@@ -927,6 +1195,12 @@ public class OfflineRegisterApp : MonoBehaviour
         CreateLabel(card, $"{record.eventName}　{status}{(record.isLocked ? "（ロック中）" : string.Empty)}", 18, Ink, FontStyle.Bold, 34);
         CreateLabel(card, $"売上 {store.GetEventSalesTotal(record):N0}円　・　頒布 {store.GetEventItemCount(record)}点　・　会計 {record.sales.Count}回", 15, Muted, FontStyle.Normal, 30);
         CreateLabel(card, $"使用したおつり（返した額）　{store.GetEventChangeTotal(record):N0}円", 15, Primary, FontStyle.Bold, 28);
+        if(record.hasChangeFloatSnapshot)
+        {
+            CreateLabel(card,
+                $"釣銭準備 {store.GetStartingChangeAmount(record):N0}円 ＝ 残り {store.GetRemainingChangeAmount(record):N0}円 ＋ 使用 {store.GetEventChangeTotal(record):N0}円",
+                13, Muted, FontStyle.Normal, 28);
+        }
 
         var inventoryLines = new List<string>();
         if(record.products != null)
@@ -969,7 +1243,8 @@ public class OfflineRegisterApp : MonoBehaviour
             delete.interactable = record.deletionPending || !record.isLocked;
         }
 
-        card.GetComponent<LayoutElement>().preferredHeight = 190 + inventoryLines.Count * 24 + (allowManagement ? 70 : 0);
+        card.GetComponent<LayoutElement>().preferredHeight = 190 + inventoryLines.Count * 24 +
+            (record.hasChangeFloatSnapshot ? 28 : 0) + (allowManagement ? 70 : 0);
     }
 
     private void BuildHistoryFooter()
@@ -1027,11 +1302,15 @@ public class OfflineRegisterApp : MonoBehaviour
             return;
         }
 
-        CreateLabel(body, store.IsFinalizing ? "イベント終了を再開しますか？" : "イベントを終了しますか？", 25, Ink, FontStyle.Bold, 58);
+        CreateLabel(body, record.isPractice
+            ? "おためしを終了しますか？"
+            : store.IsFinalizing ? "イベント終了を再開しますか？" : "イベントを終了しますか？", 25, Ink, FontStyle.Bold, 58);
         CreateLabel(body, record.eventName, 20, Muted, FontStyle.Bold, 40);
         CreateLabel(body, $"総売り上げ\n{store.GetEventSalesTotal(record):N0}円", 28, Ink, FontStyle.Bold, 92);
         CreateLabel(body, $"頒布数　{store.GetEventItemCount(record)}点　／　会計回数　{record.sales.Count}回", 16, Muted, FontStyle.Normal, 42);
-        CreateLabel(body, store.IsFinalizing
+        CreateLabel(body, record.isPractice
+            ? "終了すると、この練習での売上・在庫・釣銭の変動を破棄します。"
+            : store.IsFinalizing
             ? "前回の終了処理が途中で止まっていました。安全に続きを実行し、在庫を確定します。"
             : "終了すると、イベント中に記録した仮の在庫変動を商品在庫へ反映し、売上履歴に保存します。", 16, Accent, FontStyle.Bold, 86);
     }
@@ -1048,7 +1327,9 @@ public class OfflineRegisterApp : MonoBehaviour
 
         RectTransform row = CreateRow(footer, 8);
         CreateButton(row, "続ける", Card, Ink, 56, () => ShowPage(Page.Register));
-        Button finish = CreateButton(row, "イベントを終了", Accent, Color.white, 56, CompleteEvent);
+        bool practice = store.ActiveEvent != null && store.ActiveEvent.isPractice;
+        Action finishAction = practice ? new Action(ConfirmEndPractice) : new Action(CompleteEvent);
+        Button finish = CreateButton(row, practice ? "おためし終了" : "イベントを終了", Accent, Color.white, 56, finishAction);
         finish.interactable = store.ActiveEvent != null && string.IsNullOrEmpty(store.LoadError);
     }
 
@@ -1675,7 +1956,8 @@ public class OfflineRegisterApp : MonoBehaviour
     private void ConfigureVerticalPage(int spacing)
     {
         VerticalLayoutGroup layout = GetOrAddComponent<VerticalLayoutGroup>(body.gameObject);
-        layout.padding = new RectOffset(8, 8, 8, 8);
+        int pagePadding = layoutSettings != null ? layoutSettings.pagePadding : 8;
+        layout.padding = new RectOffset(pagePadding, pagePadding, pagePadding, pagePadding);
         layout.spacing = spacing;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
@@ -1801,7 +2083,7 @@ public class OfflineRegisterApp : MonoBehaviour
         return content;
     }
 
-    private Button CreateButton(Transform parent, string label, Color background, Color textColor, float height, Action action)
+    private Button CreateButton(Transform parent, string label, Color background, Color textColor, float height, Action action, bool isProductTile = false)
     {
         RectTransform rect = CreateRect("Button", parent);
         Image image = rect.gameObject.AddComponent<Image>();
@@ -1816,7 +2098,22 @@ public class OfflineRegisterApp : MonoBehaviour
         button.colors = colors;
         if(action != null)
         {
-            button.onClick.AddListener(() => action());
+            button.onClick.AddListener(() =>
+            {
+                if(soundEffects != null)
+                {
+                    if(isProductTile)
+                    {
+                        soundEffects.PlayProductTap();
+                    }
+                    else
+                    {
+                        soundEffects.PlayButtonTap();
+                    }
+                }
+
+                action();
+            });
         }
 
         if(!string.IsNullOrEmpty(label))

@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 374455949}
   - component: {fileID: 374455948}
   - component: {fileID: 374455947}
+  - component: {fileID: 781943200}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -168,7 +169,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.GraphicRaycaster
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
@@ -185,7 +186,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.CanvasScaler
   m_UiScaleMode: 0
   m_ReferencePixelsPerUnit: 100
@@ -221,6 +222,32 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
+--- !u!114 &781943200
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 374455945}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5f1c1c254ab4c7bab1fd67f250c0e37, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  referenceResolution: {x: 430, y: 932}
+  matchWidthOrHeight: 0.45
+  horizontalPadding: 12
+  verticalPadding: 10
+  sectionSpacing: 8
+  pagePadding: 8
+  headerHeight: 66
+  footerHeight: 144
+  pageMinimumHeight: 250
+  compactColumnCount: 3
+  wideColumnCount: 4
+  wideLayoutBreakpoint: 720
+  productTileSpacing: 8
+  productTileHeightRatio: 1.28
 --- !u!1 &415083084
 GameObject:
   m_ObjectHideFlags: 0
@@ -248,7 +275,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4e8b42d32fc81428e82e0b9b97e516fe, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ProductDataTest
 --- !u!4 &415083086
 Transform:
@@ -302,8 +329,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!20 &519420031
 Camera:
   m_ObjectHideFlags: 0
@@ -397,8 +424,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 073797afb82c5a1438f328866b10b3f0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!4 &619394802
 Transform:
   m_ObjectHideFlags: 0
@@ -442,7 +469,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4f231c4fb786f3946a6b90b886c48677, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.EventSystems.StandaloneInputModule
   m_SendPointerHoverToParent: 1
   m_HorizontalAxis: Horizontal
@@ -462,7 +489,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 76c392e42b5098c458856cdf6ecaaaa1, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.EventSystems.EventSystem
   m_FirstSelected: {fileID: 0}
   m_sendNavigationEvents: 1
@@ -510,7 +537,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -646,7 +673,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0e44ab13307274d90b1b8bfd438cfbcc, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ProductListView
   productListText: {fileID: 1318951635}
 --- !u!4 &1387070650
@@ -674,6 +701,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2094548634}
   - component: {fileID: 2094548633}
+  - component: {fileID: 1776309044}
   m_Layer: 0
   m_Name: ProductDataCatalog
   m_TagString: Untagged
@@ -691,9 +719,25 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9b46c37a990d44dc3a1d55833e6f134c, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ProductCatalog
   products: []
+--- !u!114 &1776309044
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2094548632}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a478e8b507334ed09b86125b0a269f74, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::RegisterSoundEffects
+  audioSource: {fileID: 0}
+  buttonTapClip: {fileID: 0}
+  productTapClip: {fileID: 0}
+  volume: 0.75
 --- !u!4 &2094548634
 Transform:
   m_ObjectHideFlags: 0

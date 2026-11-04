@@ -3,11 +3,6 @@
     "com.unity.feature.2d": "2.0.2",
     "com.unity.multiplayer.center": "1.0.1",
     "com.unity.ugui": "2.0.0",
-<<<<<<< Updated upstream
-    "com.yasirkula.nativegallery": "https://github.com/yasirkula/UnityNativeGallery.git#v1.9.5",
-=======
-    "com.yasirkula.nativegallery": "file:C:/Users/redri/Downloads/UnityNativeGallery-master/UnityNativeGallery-master",
->>>>>>> Stashed changes
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.ai": "1.0.0",

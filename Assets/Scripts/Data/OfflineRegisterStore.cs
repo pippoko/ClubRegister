@@ -29,6 +29,13 @@ public class RegisteredEventDefinition
 }
 
 [Serializable]
+public class RegisterChangeCash
+{
+    public int denomination;
+    public int count;
+}
+
+[Serializable]
 public class RegisterSaleLine
 {
     public string productID;
@@ -61,6 +68,10 @@ public class RegisterEventRecord
     public string registeredEventID;
     public bool isLocked;
     public bool deletionPending;
+    public bool isPractice;
+    public bool hasChangeFloatSnapshot;
+    public List<RegisterChangeCash> startingChangeCash = new List<RegisterChangeCash>();
+    public List<RegisterChangeCash> remainingChangeCash = new List<RegisterChangeCash>();
     public List<RegisterProductSnapshot> products = new List<RegisterProductSnapshot>();
     public List<RegisterSale> sales = new List<RegisterSale>();
 }
@@ -72,6 +83,7 @@ public class OfflineRegisterDocument
     public RegisterEventRecord activeEvent;
     public List<RegisterEventRecord> completedEvents = new List<RegisterEventRecord>();
     public List<RegisteredEventDefinition> registeredEvents = new List<RegisteredEventDefinition>();
+    public List<RegisterChangeCash> configuredChangeCash = new List<RegisterChangeCash>();
 }
 
 /// <summary>
@@ -83,6 +95,7 @@ public class OfflineRegisterStore : MonoBehaviour
     private const string ActiveStatus = "active";
     private const string FinalizingStatus = "finalizing";
     private const string CompletedStatus = "completed";
+    private static readonly int[] ChangeDenominations = { 10000, 5000, 1000, 500, 100, 50, 10, 5, 1 };
 
     private string SavePath => Path.Combine(Application.persistentDataPath, "register-data.json");
     private OfflineRegisterDocument document = new OfflineRegisterDocument();
@@ -90,17 +103,28 @@ public class OfflineRegisterStore : MonoBehaviour
     public RegisterEventRecord ActiveEvent => document.activeEvent;
     public IReadOnlyList<RegisterEventRecord> CompletedEvents => document.completedEvents;
     public IReadOnlyList<RegisteredEventDefinition> RegisteredEvents => document.registeredEvents;
+    public IReadOnlyList<RegisterChangeCash> ConfiguredChangeCash => document.configuredChangeCash;
     public bool IsFinalizing => document.activeEvent != null && document.activeEvent.status == FinalizingStatus;
     public string LoadError { get; private set; }
 
     private void Awake()
     {
         Load();
+        if(document != null && document.activeEvent != null && document.activeEvent.isPractice)
+        {
+            RegisterEventRecord abandonedPractice = document.activeEvent;
+            document.activeEvent = null;
+            if(!Save(out string errorMessage))
+            {
+                document.activeEvent = abandonedPractice;
+                Debug.LogWarning("おためしレジを終了できませんでした：" + errorMessage);
+            }
+        }
     }
 
     public bool StartEvent(string eventName, ProductCatalog catalog, out string errorMessage)
     {
-        return StartEvent(eventName, null, catalog, null, out errorMessage);
+        return StartEvent(eventName, null, catalog, null, false, out errorMessage);
     }
 
     public bool StartEvent(RegisteredEventDefinition definition, ProductCatalog catalog, out string errorMessage)
@@ -111,7 +135,94 @@ public class OfflineRegisterStore : MonoBehaviour
             return false;
         }
 
-        return StartEvent(definition.eventName, definition.registeredEventID, catalog, definition.productIDs, out errorMessage);
+        return StartEvent(definition.eventName, definition.registeredEventID, catalog, definition.productIDs, false, out errorMessage);
+    }
+
+    public bool StartPracticeEvent(ProductCatalog catalog, out string errorMessage)
+    {
+        return StartEvent("おためしレジ", null, catalog, null, true, out errorMessage);
+    }
+
+    public bool SetConfiguredChangeCash(List<RegisterChangeCash> counts, out string errorMessage)
+    {
+        errorMessage = null;
+        if(!CanWrite(out errorMessage))
+        {
+            return false;
+        }
+
+        if(document.activeEvent != null)
+        {
+            errorMessage = "イベント中は釣銭の準備数を変更できません。";
+            return false;
+        }
+
+        if(!TryNormalizeChangeCash(counts, out List<RegisterChangeCash> normalized, out errorMessage))
+        {
+            return false;
+        }
+
+        List<RegisterChangeCash> previous = CloneChangeCash(document.configuredChangeCash);
+        document.configuredChangeCash = normalized;
+        if(Save(out errorMessage))
+        {
+            return true;
+        }
+
+        document.configuredChangeCash = previous;
+        return false;
+    }
+
+    public bool DeleteRegisteredEvent(string registeredEventID, out string errorMessage)
+    {
+        errorMessage = null;
+        if(!CanWrite(out errorMessage))
+        {
+            return false;
+        }
+
+        RegisteredEventDefinition definition = document.registeredEvents.Find(item => item != null && item.registeredEventID == registeredEventID);
+        if(definition == null || definition.isArchived)
+        {
+            errorMessage = "削除できる登録イベントが見つかりません。履歴のあるイベントは削除できません。";
+            return false;
+        }
+
+        if(document.activeEvent != null && document.activeEvent.registeredEventID == registeredEventID)
+        {
+            errorMessage = "会計中のイベントは削除できません。";
+            return false;
+        }
+
+        int index = document.registeredEvents.IndexOf(definition);
+        document.registeredEvents.RemoveAt(index);
+        if(Save(out errorMessage))
+        {
+            return true;
+        }
+
+        document.registeredEvents.Insert(index, definition);
+        return false;
+    }
+
+    public long GetConfiguredChangeAmount()
+    {
+        return GetChangeCashAmount(document.configuredChangeCash);
+    }
+
+    public long GetStartingChangeAmount(RegisterEventRecord record)
+    {
+        return GetChangeCashAmount(record == null ? null : record.startingChangeCash);
+    }
+
+    public long GetRemainingChangeAmount(RegisterEventRecord record)
+    {
+        return GetChangeCashAmount(record == null ? null : record.remainingChangeCash);
+    }
+
+    public IReadOnlyList<RegisterChangeCash> GetChangeCashCounts(RegisterEventRecord record)
+    {
+        return record == null ? document.configuredChangeCash : record.remainingChangeCash;
     }
 
     public bool SaveRegisteredEvent(RegisteredEventDefinition definition, out string errorMessage)
@@ -308,7 +419,7 @@ public class OfflineRegisterStore : MonoBehaviour
         return false;
     }
 
-    private bool StartEvent(string eventName, string registeredEventID, ProductCatalog catalog, List<string> productIDsToSell, out string errorMessage)
+    private bool StartEvent(string eventName, string registeredEventID, ProductCatalog catalog, List<string> productIDsToSell, bool isPractice, out string errorMessage)
     {
         errorMessage = null;
 
@@ -335,7 +446,11 @@ public class OfflineRegisterStore : MonoBehaviour
             eventName = string.IsNullOrWhiteSpace(eventName) ? "イベント" : eventName.Trim(),
             registeredEventID = registeredEventID,
             startedAt = DateTime.Now.ToString("o"),
-            status = ActiveStatus
+            status = ActiveStatus,
+            isPractice = isPractice,
+            hasChangeFloatSnapshot = true,
+            startingChangeCash = CloneChangeCash(document.configuredChangeCash),
+            remainingChangeCash = CloneChangeCash(document.configuredChangeCash)
         };
 
         var productIDs = new HashSet<string>();
@@ -635,11 +750,20 @@ public class OfflineRegisterStore : MonoBehaviour
 
         sale.total = total;
         sale.change = received - total;
+        List<RegisterChangeCash> previousChangeCash = CloneChangeCash(record.remainingChangeCash);
+        if(!TryPayChange(record.remainingChangeCash, sale.change, out List<RegisterChangeCash> updatedChangeCash))
+        {
+            errorMessage = $"おつり {sale.change:N0}円を準備できません。お釣り管理で硬貨・紙幣の残数を確認してください。";
+            return false;
+        }
+
+        record.remainingChangeCash = updatedChangeCash;
         record.sales.Add(sale);
 
         if(!Save(out errorMessage))
         {
             record.sales.Remove(sale);
+            record.remainingChangeCash = previousChangeCash;
             return false;
         }
 
@@ -835,6 +959,18 @@ public class OfflineRegisterStore : MonoBehaviour
         if(record == null)
         {
             errorMessage = "開催中のイベントがありません。";
+            return false;
+        }
+
+        if(record.isPractice)
+        {
+            document.activeEvent = null;
+            if(Save(out errorMessage))
+            {
+                return true;
+            }
+
+            document.activeEvent = record;
             return false;
         }
 
@@ -1053,6 +1189,7 @@ public class OfflineRegisterStore : MonoBehaviour
         if(!File.Exists(SavePath))
         {
             document = new OfflineRegisterDocument();
+            document.configuredChangeCash = CreateDefaultChangeCash();
             return;
         }
 
@@ -1069,6 +1206,8 @@ public class OfflineRegisterStore : MonoBehaviour
                 document.registeredEvents = new List<RegisteredEventDefinition>();
             }
 
+            NormalizeConfiguredChangeCash();
+
             foreach(RegisteredEventDefinition definition in document.registeredEvents)
             {
                 if(definition != null && definition.productIDs == null)
@@ -1079,6 +1218,12 @@ public class OfflineRegisterStore : MonoBehaviour
 
             if(document.activeEvent != null)
             {
+                if(document.activeEvent.startingChangeCash == null || document.activeEvent.startingChangeCash.Count == 0)
+                {
+                    document.activeEvent.startingChangeCash = CloneChangeCash(document.configuredChangeCash);
+                    document.activeEvent.remainingChangeCash = CloneChangeCash(document.configuredChangeCash);
+                    document.activeEvent.hasChangeFloatSnapshot = false;
+                }
                 NormalizeEvent(document.activeEvent);
             }
 
@@ -1099,6 +1244,7 @@ public class OfflineRegisterStore : MonoBehaviour
                     document = JsonUtility.FromJson<OfflineRegisterDocument>(File.ReadAllText(backupPath));
                     if(document != null && document.completedEvents != null)
                     {
+                        NormalizeConfiguredChangeCash();
                         if(document.registeredEvents == null)
                         {
                             document.registeredEvents = new List<RegisteredEventDefinition>();
@@ -1112,6 +1258,12 @@ public class OfflineRegisterStore : MonoBehaviour
                         }
                         if(document.activeEvent != null)
                         {
+                            if(document.activeEvent.startingChangeCash == null || document.activeEvent.startingChangeCash.Count == 0)
+                            {
+                                document.activeEvent.startingChangeCash = CloneChangeCash(document.configuredChangeCash);
+                                document.activeEvent.remainingChangeCash = CloneChangeCash(document.configuredChangeCash);
+                                document.activeEvent.hasChangeFloatSnapshot = false;
+                            }
                             NormalizeEvent(document.activeEvent);
                         }
                         foreach(RegisterEventRecord completed in document.completedEvents)
@@ -1139,6 +1291,7 @@ public class OfflineRegisterStore : MonoBehaviour
             }
 
             document = new OfflineRegisterDocument();
+            document.configuredChangeCash = CreateDefaultChangeCash();
             Debug.LogError(LoadError);
         }
     }
@@ -1212,6 +1365,141 @@ public class OfflineRegisterStore : MonoBehaviour
         return product.ActivePrice > 0 ? product.ActivePrice : Mathf.Max(0, product.DefaultPrice);
     }
 
+    private static List<RegisterChangeCash> CreateDefaultChangeCash()
+    {
+        return new List<RegisterChangeCash>
+        {
+            new RegisterChangeCash { denomination = 10000, count = 0 },
+            new RegisterChangeCash { denomination = 5000, count = 1 },
+            new RegisterChangeCash { denomination = 1000, count = 5 },
+            new RegisterChangeCash { denomination = 500, count = 4 },
+            new RegisterChangeCash { denomination = 100, count = 10 },
+            new RegisterChangeCash { denomination = 50, count = 0 },
+            new RegisterChangeCash { denomination = 10, count = 0 },
+            new RegisterChangeCash { denomination = 5, count = 0 },
+            new RegisterChangeCash { denomination = 1, count = 0 }
+        };
+    }
+
+    private void NormalizeConfiguredChangeCash()
+    {
+        if(document.configuredChangeCash == null || document.configuredChangeCash.Count == 0)
+        {
+            document.configuredChangeCash = CreateDefaultChangeCash();
+            return;
+        }
+
+        if(!TryNormalizeChangeCash(document.configuredChangeCash, out List<RegisterChangeCash> normalized, out string errorMessage))
+        {
+            document.configuredChangeCash = CreateDefaultChangeCash();
+            Debug.LogWarning("釣銭設定を初期値に戻しました：" + errorMessage);
+            return;
+        }
+
+        document.configuredChangeCash = normalized;
+    }
+
+    private static List<RegisterChangeCash> CreateEmptyChangeCash()
+    {
+        var result = new List<RegisterChangeCash>();
+        foreach(int denomination in ChangeDenominations)
+        {
+            result.Add(new RegisterChangeCash { denomination = denomination, count = 0 });
+        }
+
+        return result;
+    }
+
+    private static List<RegisterChangeCash> CloneChangeCash(List<RegisterChangeCash> source)
+    {
+        var result = new List<RegisterChangeCash>();
+        if(source != null)
+        {
+            foreach(RegisterChangeCash item in source)
+            {
+                if(item != null)
+                {
+                    result.Add(new RegisterChangeCash { denomination = item.denomination, count = item.count });
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static bool TryNormalizeChangeCash(List<RegisterChangeCash> source, out List<RegisterChangeCash> normalized, out string errorMessage)
+    {
+        normalized = CreateEmptyChangeCash();
+        errorMessage = null;
+        if(source == null)
+        {
+            errorMessage = "釣銭の内訳を読み込めませんでした。";
+            return false;
+        }
+
+        foreach(RegisterChangeCash item in source)
+        {
+            if(item == null || Array.IndexOf(ChangeDenominations, item.denomination) < 0 || item.count < 0 || item.count > 999)
+            {
+                errorMessage = "釣銭の枚数は、各種類0〜999枚で設定してください。";
+                return false;
+            }
+
+            if(source.FindAll(candidate => candidate != null && candidate.denomination == item.denomination).Count != 1)
+            {
+                errorMessage = "釣銭の種類が重複しています。";
+                return false;
+            }
+
+            RegisterChangeCash target = normalized.Find(candidate => candidate.denomination == item.denomination);
+            target.count = item.count;
+        }
+
+        return true;
+    }
+
+    private static long GetChangeCashAmount(List<RegisterChangeCash> counts)
+    {
+        long amount = 0;
+        if(counts != null)
+        {
+            foreach(RegisterChangeCash item in counts)
+            {
+                if(item != null && item.denomination > 0 && item.count > 0)
+                {
+                    amount += (long)item.denomination * item.count;
+                }
+            }
+        }
+
+        return amount;
+    }
+
+    private static bool TryPayChange(List<RegisterChangeCash> source, long amount, out List<RegisterChangeCash> updated)
+    {
+        updated = CloneChangeCash(source);
+        if(amount < 0)
+        {
+            return false;
+        }
+
+        long remaining = amount;
+        foreach(int denomination in ChangeDenominations)
+        {
+            RegisterChangeCash item = updated.Find(candidate => candidate.denomination == denomination);
+            if(item == null || item.count <= 0)
+            {
+                continue;
+            }
+
+            int used = (int)Math.Min(item.count, remaining / denomination);
+            item.count -= used;
+            remaining -= (long)used * denomination;
+        }
+
+        return remaining == 0;
+    }
+
     private static void NormalizeEvent(RegisterEventRecord record)
     {
         if(record.products == null)
@@ -1222,6 +1510,17 @@ public class OfflineRegisterStore : MonoBehaviour
         if(record.sales == null)
         {
             record.sales = new List<RegisterSale>();
+        }
+
+        if(record.startingChangeCash == null || record.startingChangeCash.Count == 0)
+        {
+            record.startingChangeCash = CreateEmptyChangeCash();
+            record.hasChangeFloatSnapshot = false;
+        }
+
+        if(record.remainingChangeCash == null || record.remainingChangeCash.Count == 0)
+        {
+            record.remainingChangeCash = CloneChangeCash(record.startingChangeCash);
         }
 
         foreach(RegisterSale sale in record.sales)
